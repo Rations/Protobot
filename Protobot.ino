@@ -7,16 +7,16 @@
 #define PS2_ATT_PIN   8     // Attention
 #define PS2_DAT_PIN   6     // Data
 
-#define ARM_SERVO_PIN 4     // Elbow Servo HS-755HB
+#define ARM_SERVO_PIN 4
 
 #define GM_PIN 3            // Currently a placeholder
 #define SM_PIN 2            // Currently a placeholder
 #define VM_PIN 1            // Currently a placeholder
 
 // PS2 controller characteristics.
-#define JS_ZERO       128   // Joystick midpoint value.
+#define JS_ZERO       128   // Joystick midpoint value
 #define JS_RANGE      124
-#define JS_DEAD       4     // Joystick deadzone value.s
+#define JS_DEAD       4     // Joystick deadzone value
 #define R2_DEAD       5
 
 // CRS speed data. 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
