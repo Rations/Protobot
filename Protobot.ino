@@ -1,14 +1,13 @@
 /*
- * Inverse Kinematics code to control a (modified) LynxMotion AL5D robot arm using a PS2 controller.
  * PS2 Controls
- *  Right Joystick L/R: Gripper tip X position (side to side)
- *  Right Joystick U/D: Gripper tip Y position (distance out from base center)
- *  R1/R2 Buttons:      Gripper tip Z position (height from surface)
- *  Left  Joystick L/R: Wrist rotate (if installed)
- *  Left  Joystick U/D: Wrist angle
- *  L1/L2 Buttons:      Gripper close/open
- *  X Button:           Gripper fully open
- *  Digital Pad U/D:    Speed increase/decrease
+ * Right Joystick L/R: Gripper tip X position (side to side)
+ * Right Joystick U/D: Gripper tip Y position (distance out from base center)
+ * R1/R2 Buttons:      Gripper tip Z position (height from surface)
+ * Left  Joystick L/R: Wrist rotate (if installed)
+ * Left  Joystick U/D: Wrist angle
+ * L1/L2 Buttons:      Gripper close/open
+ * X Button:           Gripper fully open
+ * Digital Pad U/D:    Speed increase/decrease
  */
 #include <Servo.h>
 #include <PS2X_lib.h>
@@ -35,7 +34,9 @@
 // Arduino pin number of on-board speaker
 #define SPK_PIN 5
 
-// Define generic range limits for servos in us and deg (used to map range of 180 deg to 1800 us).
+// Define generic range limits for servos, in microseconds (us) and degrees (deg)
+// Used to map range of 180 deg to 1800 us (native servo units).
+// Specific per-servo/joint limits are defined below
 #define SERVO_MIN_US 600
 #define SERVO_MID_US 1500
 #define SERVO_MAX_US 2400
@@ -43,8 +44,10 @@
 #define SERVO_MID_DEG 90.0
 #define SERVO_MAX_DEG 180.0
 
-// Specific physical limits (degrees) for each servo. 
-// MID setting = required servo input needed to achieve a 90 deg joint angle, to allow compensation for horn misalignment
+// Set physical limits (in degrees) per servo/joint.
+// Will vary for each servo/joint, depending on mechanical range of motion.
+// The MID setting is the required servo input needed to achieve a 
+// 90 degree joint angle, to allow compensation for horn misalignment
 #define BAS_MIN 0.0         // Fully CCW
 #define BAS_MID 90.0
 #define BAS_MAX 180.0       // Fully CW
@@ -64,6 +67,7 @@
 #define GRI_MIN 25.0        // Fully open
 #define GRI_MID 90.0
 #define GRI_MAX 165.0       // Fully closed
+
 
 // Speed adjustment parameters
 // Percentages (1.0 = 100%) - applied to all arm movements
@@ -99,7 +103,8 @@
 #define PARK_READY 2        // Arm at Ready-To-Run position
 
 // Ready-To-Run arm position. See descriptions below
-// NOTE: Have the arm near this position before turning on the servo power to prevent whiplash
+// NOTE: Have the arm near this position before turning on the 
+//       servo power to prevent whiplash
 #define READY_Y 170.0
 #define READY_Z 45.0
 #define READY_GA 0.0
@@ -110,6 +115,7 @@ float Y = READY_Y;          // Distance (mm) out from base center
 float Z = READY_Z;          // Height (mm) from surface (i.e. X/Y plane)
 float GA = READY_GA;        // Gripper angle. Servo degrees, relative to X/Y plane - 0 is horizontal
 float G = READY_G;          // Gripper jaw opening. Servo degrees - midpoint is halfway open
+
 float Speed = SPEED_DEFAULT;
 
 // Pre-calculations
@@ -125,9 +131,11 @@ Servo   Shl_Servo;
 Servo   Elb_Servo;
 Servo   Wri_Servo;
 Servo   Gri_Servo;
- 
+
 void setup()
 {
+
+
     // Attach to the servos and specify range limits
     Bas_Servo.attach(BAS_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
     Shl_Servo.attach(SHL_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
@@ -135,15 +143,18 @@ void setup()
     Wri_Servo.attach(WRI_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
     Gri_Servo.attach(GRI_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
 
+
     // Setup PS2 controller. Loop until ready.
     byte    ps2_stat;
     do {
-        ps2_stat = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);           // Check if gamepad is connected and ready
+        ps2_stat = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
+
     } while (ps2_stat == 1);
- 
 
     // NOTE: Ensure arm is close to the desired park position before turning on servo power!
     servo_park(PARK_READY);
+
+
     delay(500);
     // Sound tone to indicate it's safe to turn on servo power
     tone(SPK_PIN, TONE_READY, TONE_DURATION);
@@ -170,6 +181,7 @@ void loop()
     int lx_trans = Ps2x.Analog(PSS_LX) - JS_MIDPOINT;
     int ry_trans = JS_MIDPOINT - Ps2x.Analog(PSS_RY);
     int rx_trans = Ps2x.Analog(PSS_RX) - JS_MIDPOINT;
+
 
     // Y Position (in mm)
     // Must be > Y_MIN. Servo range checking in IK code
@@ -239,10 +251,12 @@ void loop()
         // Audible feedback
         tone(SPK_PIN, (TONE_READY * Speed), TONE_DURATION);
     }
- 
+    
 
     // Only perform IK calculations if arm motion is needed.
     if (arm_move) {
+
+
         // Reset the flag
         arm_move = false;
     }
@@ -319,6 +333,7 @@ int set_arm(float x, float y, float z, float grip_angle_d)
     Wri_Servo.writeMicroseconds(deg_to_us(wri_pos));
 
 
+
     return IK_SUCCESS;
 }
  
@@ -333,29 +348,38 @@ void servo_park(int park_type)
             Elb_Servo.writeMicroseconds(deg_to_us(ELB_MID));
             Wri_Servo.writeMicroseconds(deg_to_us(WRI_MID));
             Gri_Servo.writeMicroseconds(deg_to_us(GRI_MID));
+
             break;
         
         // Ready-To-Run position
         case PARK_READY:
+
             Gri_Servo.writeMicroseconds(deg_to_us(READY_G));
+
             break;
     }
 
     return;
 }
 
-// Converts float (decimal) degrees to us for extra servo resolution.
-int deg_to_us(float value) {
-    // Apply boundary constraints
+// The Arduino Servo library .write() function accepts 'int' degrees, meaning
+// maximum servo positioning resolution is whole degrees. Servos are capable 
+// of roughly 2x that resolution via direct microsecond control.
+//
+// This function converts 'float' (i.e. decimal) degrees to corresponding 
+// servo microseconds to take advantage of this extra resolution.
+int deg_to_us(float value)
+{
+    // Apply basic constraints
     if (value < SERVO_MIN_DEG) value = SERVO_MIN_DEG;
     if (value > SERVO_MAX_DEG) value = SERVO_MAX_DEG;
     
-    // Map degrees to us, rounding to nearest whole number
+    // Map degrees to microseconds, and round the result to a whole number
     return(round(map_float(value, SERVO_MIN_DEG, SERVO_MAX_DEG, (float)SERVO_MIN_US, (float)SERVO_MAX_US)));      
 }
 
-// Scales degrees to us; same logic as native map() function, but operates on float instead of long
-float map_float(float x, float in_min, float in_max, float out_min, float out_max) {
-  // x - in_min = 
+// Same logic as native map() function, just operates on float instead of long
+float map_float(float x, float in_min, float in_max, float out_min, float out_max)
+{
   return ((x - in_min) * (out_max - out_min) / (in_max - in_min)) + out_min;
 }
