@@ -12,9 +12,9 @@ int dummy;                  // Dummy variable to work around IDE (1.0.3) #ifdefs
 
 #define ARM_SERVO_PIN 4     // Elbow Servo HS-755HB
 
-#define VM_PIN        // Number goes here
-#define SM_PIN        // Number goes here
-#define GM_PIN        // Number goes here
+#define VM_PIN 1        // Number goes here
+#define SM_PIN 2        // Number goes here
+#define GM_PIN 3        // Number goes here
 
 // PS2 controller characteristics.
 #define JS_ZERO       128     // Joystick midpoint value.
@@ -26,8 +26,15 @@ int dummy;                  // Dummy variable to work around IDE (1.0.3) #ifdefs
 #define R_SPD_ZERO 90
 #define R_SPD_RANGE 90
 float R_SPD_SCALE = R_SPD_RANGE / JS_RANGE;
+
 #define T_SPD_ZERO 90
+#define T_SPD_RANGE 255
+float T_SPD_SCALE = T_SPD_RANGE / JS_RANGE;
+
 #define Z_SPD_ZERO 90
+#define Z_SPD_RANGE 90
+#define Z_REFRESH 100    // us
+float Z_SPD_SCALE = Z_SPD_RANGE / JS_RANGE;
 
 // Global variables storing servo speeds. Initialize to default speeds.  
 float r_spd = R_SPD_ZERO;
@@ -69,59 +76,63 @@ void setup() {
   }
 #endif
   // Park robot when ready.                            
-  set_robot(R_SPD_ZERO, R_SPD_ZERO, R_SPD_ZERO);
+  set_robot(R_SPD_ZERO, T_SPD_ZERO, Z_SPD_ZERO);
 #ifdef DEBUG
   Serial.println("Started.");
 #endif
   delay(500);
 }
  
-void loop()
-{
+void loop() {
   // Indidates whether input can move arm. 
   boolean move_arm = false;
-
   Ps2x.read_gamepad();
+  
   // Read right joystick; adjust value with respect to joystick zero point.
   float rh_js_y = (float)(Ps2x.Analog(PSS_RY) - JS_ZERO);
   if (abs(rh_js_y) > JS_DEAD) {
     r_spd = R_SPD_ZERO + rh_js_y * R_SPD_SCALE;
     move_arm = true;
   }
+
+  // Read left joystick; adjust value with respect to joystick zero point.
+  float lh_js_x = (float)(Ps2x.Analog(PSS_LX) - JS_ZERO);
+  if (abs(lh_js_x) > JS_DEAD) {
+    t_spd = T_SPD_ZERO + lh_js_x * T_SPD_SCALE;
+    move_arm = true;
+  }
+  
     
   // z
   if (Ps2x.Button(PSB_L1) || Ps2x.Button(PSB_R1)) {
     if (Ps2x.Button(PSB_L1)) {
-      z_temp -= Z_STEP;
+      analogWrite(GM_PIN, z_spd);
+      unsigned long init_millis = millis();
+      while (millis() - init_millis >= Z_REFRESH) {
+      }
+      analogWrite(GM_PIN, 0);
     } else {
-      z_temp += Z_STEP;
+      analogWrite(GM_PIN, z_spd);
+      unsigned long init_millis = millis();
+      while (millis() - init_millis >= Z_REFRESH) {
+      }
+      analogWrite(GM_PIN, 0);
     }
-    // Must be positive.
-    z_temp = max(z_temp, 0);
     move_arm = true;
   }
   
   // Check if motion is needed.
   if (move_arm) {
-    if (set_robot(r_spd, t_spd, z_spd)) {
-      // If the arm was positioned successfully, record the new vales. Otherwise, ignore them.
-      T = t_temp;
-      Z = z_temp;
-    } else {
-      Serial.print("IK_ERROR.");
-    }
-    // Reset the flag
+    set_robot(r_spd, t_spd, z_spd);
     move_arm = false;
   }
   delay(10);
 }
  
 // Position robot.
-int set_robot(float r_spd, float t_spd, float z_spd)
+void set_robot(float r_spd, float t_spd, float z_spd)
 {
   arm_servo.write(r_spd);
-  analogWrite(VM_PIN, speed);
-  analogWrite(SM_PIN, speed);
-  analogWrite(GM_PIN, speed);
-  return true;
+  analogWrite(VM_PIN, 255);
+  analogWrite(SM_PIN, t_spd);
 }
