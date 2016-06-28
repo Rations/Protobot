@@ -1,5 +1,5 @@
 /*
- * PS2 Controls
+ * Default (i.e., original) PS2 controls:
  * Right Joystick L/R: Gripper tip X position (side to side)
  * Right Joystick U/D: Gripper tip Y position (distance out from base center)
  * R1/R2 Buttons:      Gripper tip Z position (height from surface)
@@ -24,12 +24,8 @@ int dummy;                  // Defining this dummy variable to work around a bug
 #define PS2_ATT_PIN 8       // Attention
 #define PS2_DAT_PIN 6       // Data
 
-// Arduino pin number of on-board speaker
-#define SPK_PIN 5
-
 // Define generic range limits for servos, in microseconds (us) and degrees (deg)
 // Used to map range of 180 deg to 1800 us (native servo units).
-// Specific per-servo/joint limits are defined below
 #define SERVO_MIN_US 600
 #define SERVO_MID_US 1500
 #define SERVO_MAX_US 2400
@@ -39,10 +35,7 @@ int dummy;                  // Defining this dummy variable to work around a bug
 
 // Speed adjustment parameters
 // Percentages (1.0 = 100%) - applied to all arm movements
-#define SPEED_MIN 0.5
-#define SPEED_MAX 1.5
 #define SPEED_DEFAULT 1.0
-#define SPEED_INCREMENT 0.25
 
 // Practical navigation limit.
 // Enforced on controller input, and used for CLV calculation 
@@ -56,11 +49,6 @@ int dummy;                  // Defining this dummy variable to work around a bug
 #define JS_SCALE 100.0      // Divisor for scaling JS output for raw servo control
 #define Z_INCREMENT 2.0     // Change in Z axis (mm) per button press
 #define G_INCREMENT 2.0     // Change in Gripper jaw opening (servo angle) per button press
-
-// Audible feedback sounds
-#define TONE_READY 1000     // Hz
-#define TONE_IK_ERROR 200   // Hz
-#define TONE_DURATION 100   // ms
  
 // IK function return values
 #define IK_SUCCESS 0
@@ -90,41 +78,38 @@ float Speed = SPEED_DEFAULT;
 
 // Declare PS2 controller and servo objects
 PS2X    Ps2x;
-Servo   Arm_servo;
+Servo   arm_servo;
  
 void setup() {
 #ifdef DEBUG
-    Serial.begin(115200);
+  Serial.begin(115200);
 #endif
-
-    // Attach to the servos and specify range limits
-    Arm_servo.attach(ARM_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
-
-    // Setup PS2 controller. Loop until ready.
-    byte    ps2_stat;
-    do {
-        ps2_stat = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
+  // Attach to the servos and specify range limits
+  arm_servo.attach(ARM_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
+  
+  // Setup PS2 controller. Loop until ready.
+  byte ps2_stat;
+  do {
+    ps2_stat = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
 #ifdef DEBUG
         if (ps2_stat == 1)
             Serial.println("No controller found. Re-trying ...");
 #endif
-    } while (ps2_stat == 1);
+  } while (ps2_stat == 1);
  
 #ifdef DEBUG
-    switch (ps2_stat) {
-        case 0:
-            Serial.println("Found Controller, configured successfully.");
-            break;
-        case 2:
-            Serial.println("Controller found but not accepting commands.");
-            break;
-        case 3:
-            Serial.println("Controller refusing to enter 'Pressures' mode, may not support it. ");      
-            break;
-    }
+  switch (ps2_stat) {
+    case 0:
+      Serial.println("Found Controller, configured successfully.");
+      break;
+    case 2:
+      Serial.println("Controller found but not accepting commands.");
+      break;
+    case 3:
+      Serial.println("Controller refusing to enter 'Pressures' mode, may not support it. ");      
+      break;
+  }
 #endif
-
-    // NOTE: Ensure arm is close to the desired park position before turning on servo power!
     servo_park(PARK_READY);
 
 #ifdef DEBUG
@@ -144,27 +129,17 @@ void loop()
     // Used to indidate whether an input occurred that can move the arm
     boolean arm_move = false;
 
-    Ps2x.read_gamepad();        //read controller
+    Ps2x.read_gamepad();
 
-    // Read the left and right joysticks and translate the 
-    // normal range of values (0-255) to zero-centered values (-128 - 128)
-    int ly_trans = JS_MIDPOINT - Ps2x.Analog(PSS_LY);
-    int lx_trans = Ps2x.Analog(PSS_LX) - JS_MIDPOINT;
-    int ry_trans = JS_MIDPOINT - Ps2x.Analog(PSS_RY);
-    int rx_trans = Ps2x.Analog(PSS_RX) - JS_MIDPOINT;
-
-    // X Position (in mm)
-    // Can be positive or negative. Servo range checking in IK code
-    if (abs(rx_trans) > JS_DEADBAND) {
-        x_tmp += ((float)rx_trans / JS_IK_SCALE * Speed);
-        arm_move = true;
-    }
-
+    // Read the left and right joysticks and translate the normal range of values (0-255) to zero-centered values (-128 - 128)
+              //    int ly_trans = JS_MIDPOINT - Ps2x.Analog(PSS_LY);
+              //    int lx_trans = Ps2x.Analog(PSS_LX) - JS_MIDPOINT;
+    int r_joystick_y = JS_MIDPOINT - Ps2x.Analog(PSS_RY);
 
     // Y Position (in mm)
     // Must be > Y_MIN. Servo range checking in IK code
-    if (abs(ry_trans) > JS_DEADBAND) {
-        y_tmp += ((float)ry_trans / JS_IK_SCALE * Speed);
+    if (abs(r_joystick_y) > JS_DEADBAND) {
+        y_tmp += ((float)r_joystick_y / JS_IK_SCALE * Speed);
         y_tmp = max(y_tmp, Y_MIN);
         arm_move = true;
         
@@ -184,26 +159,7 @@ void loop()
         z_tmp = max(z_tmp, 0);
         arm_move = true;
     }
-
-    // Gripper angle (in degrees) relative to horizontal
-    // Can be positive or negative. Servo range checking in IK code
-    if (abs(ly_trans) > JS_DEADBAND) {
-        ga_tmp -= ((float)ly_trans / JS_SCALE * Speed);
-        arm_move = true;
-    }
-    
-    // Speed increase/decrease
-    if (Ps2x.ButtonPressed(PSB_PAD_UP) || Ps2x.ButtonPressed(PSB_PAD_DOWN)) {
-        if (Ps2x.ButtonPressed(PSB_PAD_UP)) {
-            Speed += SPEED_INCREMENT;   // increase speed
-        } else {
-            Speed -= SPEED_INCREMENT;   // decrease speed
-        }
-        // Constrain to limits
-        Speed = constrain(Speed, SPEED_MIN, SPEED_MAX);
-    }
  
-
     // Only perform IK calculations if arm motion is needed.
     if (arm_move) {
         if (set_arm(x_tmp, y_tmp, z_tmp) == IK_SUCCESS) {
@@ -213,7 +169,7 @@ void loop()
             Y = y_tmp;
             Z = z_tmp;
         } else {
-            Serial.print("IK_ERROR 4");
+            Serial.print("IK_ERROR 2");
         }
         // Reset the flag
         arm_move = false;
@@ -231,23 +187,20 @@ int set_arm(float x, float y, float z)
     y = rdist;
     
     // Position the servos
-    Arm_servo.writeMicroseconds(deg_to_us(elb_pos));
+    arm_servo.writeMicroseconds(deg_to_us(elb_pos));
 #ifdef DEBUG
-//DEBUGGING PRINTING GOES HERE
-  
-    Serial.println();
+  //DEBUGGING PRINTING GOES HERE
+  Serial.println();
 #endif
-
     return IK_SUCCESS;
 }
  
 // Move servos to parking position
-void servo_park(int park_type)
-{
+void servo_park(int park_type) {
     switch (park_type) {
         // All servos at midpoint
         case PARK_MIDPOINT:
-            Arm_servo.writeMicroseconds(deg_to_us(ELB_MID));
+            arm_servo.writeMicroseconds(deg_to_us(ELB_MID));
             break;
         
         // Ready-To-Run position
@@ -269,7 +222,6 @@ int deg_to_us(float value) {
 }
 
 // Same logic as native map() function, just operates on float instead of long
-float map_float(float x, float in_min, float in_max, float out_min, float out_max)
-{
+float map_float(float x, float in_min, float in_max, float out_min, float out_max) {
   return ((x - in_min) * (out_max - out_min) / (in_max - in_min)) + out_min;
 }
