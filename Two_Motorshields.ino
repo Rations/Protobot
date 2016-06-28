@@ -5,9 +5,6 @@
 Adafruit_MotorShield AFMStop(0x61); // Rightmost jumper closed
 Adafruit_MotorShield AFMSbot(0x60); // Default address, no jumpers
 
-Adafruit_MotorShield AFMStop = Adafruit_MotorShield();
-Adafruit_MotorShield AFMSbot = Adafruit_MotorShield();
-
 Adafruit_DCMotor *gearMotor_1 = AFMSbot.getMotor(1);
 Adafruit_DCMotor *gearMotor_2 = AFMSbot.getMotor(2); 
 
