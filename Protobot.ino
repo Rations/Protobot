@@ -12,156 +12,133 @@ int dummy;                  // Defining this dummy variable to work around a bug
 #define PS2_DAT_PIN 6       // Data
 
 // Practical navigation limit.
-#define Y_MIN 100.0         // mm
+#define R_MIN 100.0         // mm
 
 // PS2 controller characteristics
-#define JS_MIDPOINT 128     // Numeric value for joystick midpoint
-#define JS_DEADBAND 4       // Ignore movement this close to the center position
+#define JS_ZERO 128     // Numeric value for joystick midpoint
+#define JS_MAX 256
+#define JS_DEAD 4       // Ignore movement this close to the center position
 #define JS_IK_SCALE 50.0    // Divisor for scaling JS output for IK control
-#define Z_INCREMENT 2.0     // Change in Z axis (mm) per button press
+#define Z_STEP 2.0     // Change in Z axis (mm) per button press
+float RANGE_JS = JS_MAX - JS_DEAD;
  
 // IK function return values
-#define IK_SUCCESS 0
-#define IK_ERROR 1          // Desired position not possible
+#define IK_SUCCESS  0
+#define IK_ERROR    1       // Desired position not possible
 
-// Arm parking positions
-#define PARK_MIDPOINT 1     // Servos at midpoints
-#define PARK_READY 2        // Arm at Ready-To-Run position
+// Boundary positions.
+#define MAX_R   100.0
+#define MIN_R   0.0
+float RANGE_R = MAX_R - MIN_R;
 
-// Ready-To-Run arm position. See descriptions below
-#define READY_R 0.0
-#define READY_THETA 170.0
+// Default positions.
+#define READY_R 45.0
+#define READY_T 0
 #define READY_Z 45.0
 
-// Global variables for arm position, and initial settings
-float X = READY_R;         // Left/right distance (mm) from base centerline - 0 is straight
-float Y = READY_THETA;          // Distance (mm) out from base center
-float Z = READY_Z;          // Height (mm) from surface (i.e. X/Y plane)
-float Speed = 1.0;
+// Global variables storing position. Initialize to default positions. 
+float R = READY_R;  // Radial distance (mm) from base.
+float T = READY_T;  // Angle.
+float Z = READY_Z;  // Height (mm) from base plane.
+
+// Speed info. For CRS, 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
+#define R_SPD_ZERO  90 
+#define R_SPD_RANGE 90
+float R_SPD_SCALE = R_SPD_RANGE / JS_RANGE;
 
 // Declare PS2 controller and servo objects
-PS2X    Ps2x;
-Servo   arm_servo;
+PS2X  Ps2x;
+Servo arm_servo;
  
 void setup() {
-                                                                                          #ifdef DEBUG
-                                                                                            Serial.begin(115200);
-                                                                                          #endif
-  // Attach to the servos and specify range limits
+#ifdef DEBUG
+  Serial.begin(115200);
+#endif
   arm_servo.attach(ARM_SERVO_PIN);
-  
-  // Setup PS2 controller. Loop until ready.
-  byte ps2_stat;
+  // Set up PS2 controller; loop until ready.
+  byte ps2_status;
   do {
-    ps2_stat = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
-                              #ifdef DEBUG
-                                      if (ps2_stat == 1)
-                                          Serial.println("No controller found. Re-trying ...");
-                              #endif
-  } while (ps2_stat == 1);
- 
-                              #ifdef DEBUG
-                                switch (ps2_stat) {
-                                  case 0:
-                                    Serial.println("Found Controller, configured successfully.");
-                                    break;
-                                  case 2:
-                                    Serial.println("Controller found but not accepting commands.");
-                                    break;
-                                  case 3:
-                                    Serial.println("Controller refusing to enter 'Pressures' mode, may not support it. ");      
-                                    break;
-                                }
-                              #endif
-    servo_park(PARK_READY);
-
-                              #ifdef DEBUG
-                                  Serial.println("Start");
-                              #endif
-    delay(500);
+    ps2_status = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
+#ifdef DEBUG
+  if (ps2_status == 1) Serial.println("No controller found. Re-trying ...");
+#endif
+  } while (ps2_status == 1);
+#ifdef DEBUG
+  switch (ps2_status) {
+    case 0:
+      Serial.println("Found Controller, configured successfully.");
+      break;
+    case 2:
+      Serial.println("Controller found but not accepting commands.");
+      break;
+    case 3:
+      Serial.println("Controller refusing to enter 'Pressures' mode, may not support it. ");      
+      break;
+  }
+#endif
+  // Park robot when ready.                            
+  set_robot(READY_R, READY_T, READY_Z);
+#ifdef DEBUG
+  Serial.println("Started.");
+#endif
+  delay(500);
 }
  
 void loop()
 {
-    // Store desired position in tmp variables until confirmed by set_robot() logic
-    float x_tmp = X;
-    float y_tmp = Y;
-    float z_tmp = Z;
+  // Store desired position in temporary variables until confirmed by set_robot() logic.
+  float r_spd_temp = R;
+  float t_temp = T;
+  float z_temp = Z;
+  
+  // Indidates whether input can move arm. 
+  boolean move_arm = false;
+
+  Ps2x.read_gamepad();
+  // Read right joystick; adjust value with respect to joystick zero point.
+  float RH_JS_Y = (float)(JS_ZERO - Ps2x.Analog(PSS_RY));
+  // r position (mm); must be > R_MIN.
+  if (abs(RH_JS_Y) > JS_DEAD) {
+    r_spd_temp = R_SPD_ZERO + RH_JS_Y * R_SPD_SCALE;
+    move_arm = true;
+  }
     
-    // Used to indidate whether an input occurred that can move the arm
-    boolean arm_move = false;
-
-    Ps2x.read_gamepad();
-
-    // Read the left and right joysticks and translate the normal range of values (0-255) to zero-centered values (-128 - 128)
-              //    int ly_trans = JS_MIDPOINT - Ps2x.Analog(PSS_LY);
-              //    int lx_trans = Ps2x.Analog(PSS_LX) - JS_MIDPOINT;
-    int r_joystick_y = JS_MIDPOINT - Ps2x.Analog(PSS_RY);
-
-    // Y Position (in mm)
-    // Must be > Y_MIN. Servo range checking in IK code
-    if (abs(r_joystick_y) > JS_DEADBAND) {
-        y_tmp += ((float)r_joystick_y / JS_IK_SCALE * Speed);
-        y_tmp = max(y_tmp, Y_MIN);
-        arm_move = true;
-        if (y_tmp == Y_MIN) {
-            Serial.print("IK ERROR 1");
-        }
+  // z position (mm).
+  if (Ps2x.Button(PSB_L1) || Ps2x.Button(PSB_R1)) {
+    if (Ps2x.Button(PSB_L1)) {
+      z_temp -= Z_STEP;
+    } else {
+      z_temp += Z_STEP;
     }
-    // Z position (mm); must be positive.
-    if (Ps2x.Button(PSB_L1) || Ps2x.Button(PSB_R1)) {
-        if (Ps2x.Button(PSB_L1)) {
-            z_tmp -= Z_INCREMENT * Speed;
-        } else {
-            z_tmp += Z_INCREMENT * Speed;
-        }
-        z_tmp = max(z_tmp, 0);
-        arm_move = true;
+    // Must be positive.
+    z_temp = max(z_temp, 0);
+    move_arm = true;
+  }
+  
+  // Check if motion is needed.
+  if (move_arm) {
+    if (set_robot(r_spd_temp, t_temp, z_temp) == IK_SUCCESS) {
+      // If the arm was positioned successfully, record the new vales. Otherwise, ignore them.
+      R = arm.servo.read();
+      T = t_temp;
+      Z = z_temp;
+    } else {
+      Serial.print("IK_ERROR 2");
     }
- 
-    // Only perform IK calculations if arm motion is needed.
-    if (arm_move) {
-        if (set_robot(x_tmp, y_tmp, z_tmp) == IK_SUCCESS) {
-            // If the arm was positioned successfully, record
-            // the new vales. Otherwise, ignore them.
-            X = x_tmp;
-            Y = y_tmp;
-            Z = z_tmp;
-        } else {
-            Serial.print("IK_ERROR 2");
-        }
-        // Reset the flag
-        arm_move = false;
-    }
-    delay(10);
- }
- 
-// Position robot.
-// 0 = being full-speed in one direction, 180 being full speed in the other, and a value near 90 being no movement
-int set_robot(float r, float theta, float z)
-{
-    // Position servos.
-    arm_servo.writeMicroseconds(r);
-    
-                                                                                                                                      #ifdef DEBUG
-                                                                                                                                        //DEBUGGING PRINTING GOES HERE
-                                                                                                                                        Serial.println();
-                                                                                                                                      #endif
-    return IK_SUCCESS;
+    // Reset the flag
+    move_arm = false;
+  }
+  delay(10);
 }
  
-// Move servos to parking position
-void servo_park(int park_type) {
-    switch (park_type) {
-        // All servos at midpoint
-        case PARK_MIDPOINT:
-            arm_servo.write(ELB_MID);
-            break;
-        
-        // Ready-To-Run position
-        case PARK_READY:
-            set_robot(READY_R, READY_THETA, READY_Z);
-            break;
-    }
-    return;
+// Position robot.
+int set_robot(float r_spd, float theta, float z)
+{
+  arm_servo.write(r_spd);
+  // CODE FOR OTHER MOTORS GOES HERE
+#ifdef DEBUG
+  //DEBUGGING PRINTING GOES HERE
+  Serial.println();
+#endif
+    return IK_SUCCESS;
 }
