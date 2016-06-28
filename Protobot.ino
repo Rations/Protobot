@@ -1,8 +1,5 @@
 #include <Servo.h>
 #include <PS2X_lib.h>
-
-int dummy;                  // Dummy variable to work around IDE (1.0.3) #ifdefs pre-processor bug. 
-//#define DEBUG             // Uncomment to turn on debugging output.
                             
 // Specify pins for servos, motors, PS2 controller connections. 
 #define PS2_CLK_PIN   9     // Clock
@@ -46,9 +43,6 @@ PS2X  Ps2x;
 Servo arm_servo;
  
 void setup() {
-#ifdef DEBUG
-  Serial.begin(115200);
-#endif
   arm_servo.attach(ARM_SERVO_PIN);
   pinMode(VM_PIN, OUTPUT);
   pinMode(GM_PIN, OUTPUT);
@@ -58,28 +52,10 @@ void setup() {
   byte ps2_status;
   do {
     ps2_status = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
-#ifdef DEBUG
-  if (ps2_status == 1) Serial.println("No controller found. Re-trying . . .");
-#endif
   } while (ps2_status == 1);
-#ifdef DEBUG
-  switch (ps2_status) {
-    case 0:
-      Serial.println("Found Controller, configured successfully.");
-      break;
-    case 2:
-      Serial.println("Controller found but not accepting commands.");
-      break;
-    case 3:
-      Serial.println("Controller refusing to enter 'Pressures' mode, may not support it. ");      
-      break;
-  }
-#endif
+
   // Park robot when ready.                            
   set_robot(R_SPD_ZERO, T_SPD_ZERO, Z_SPD_ZERO);
-#ifdef DEBUG
-  Serial.println("Started.");
-#endif
   delay(500);
 }
  
@@ -104,24 +80,16 @@ void loop() {
   
     
   // z
-  if (Ps2x.Button(PSB_L1) || Ps2x.Button(PSB_R1)) {
-    if (Ps2x.Button(PSB_L1)) {
-      analogWrite(GM_PIN, z_spd);
-      unsigned long init_millis = millis();
-      while (millis() - init_millis >= Z_REFRESH) {
-      }
-      analogWrite(GM_PIN, 0);
-    } else {
-      analogWrite(GM_PIN, z_spd);
-      unsigned long init_millis = millis();
-      while (millis() - init_millis >= Z_REFRESH) {
-      }
-      analogWrite(GM_PIN, 0);
-    }
-    move_arm = true;
+  while (Ps2x.Button(PSB_L1)) {
+    analogWrite(GM_PIN, z_spd);
   }
-  
-  // Check if motion is needed.
+  analogWrite(GM_PIN, 0);
+  while (Ps2x.Button(PSB_R1)) {
+    analogWrite(GM_PIN, z_spd);
+  }
+  analogWrite(GM_PIN, 0);
+  move_arm = true;
+
   if (move_arm) {
     set_robot(r_spd, t_spd, z_spd);
     move_arm = false;
