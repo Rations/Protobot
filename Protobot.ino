@@ -9,6 +9,7 @@
  * X Button:           Gripper fully open
  * Digital Pad U/D:    Speed increase/decrease
  */
+
 #include <Servo.h>
 #include <PS2X_lib.h>
 
@@ -19,11 +20,11 @@
 #define GRIPPER 73.025      // Gripper length, to middle of grip surface 2.875" (3.375" - 0.5")
 
 // Arduino pin numbers for servo connections
-#define BAS_SERVO_PIN 2     // Base servo HS-485HB
-#define SHL_SERVO_PIN 3     // Shoulder Servo HS-805BB
-#define ELB_SERVO_PIN 4     // Elbow Servo HS-755HB
-#define WRI_SERVO_PIN 10    // Wrist servo HS-645MG
-#define GRI_SERVO_PIN 11    // Gripper servo HS-422
+#define base_servo_PIN 2     // Base servo HS-485HB
+#define shoulder_servo_PIN 3     // Shoulder Servo HS-805BB
+#define elbow_servo_PIN 4     // Elbow Servo HS-755HB
+#define wrist_servo_PIN 10    // Wrist servo HS-645MG
+#define gripper_servo_PIN 11    // Gripper servo HS-422
 
 // Arduino pin numbers for PS2 controller connections
 #define PS2_CLK_PIN 9       // Clock
@@ -68,7 +69,6 @@
 #define GRI_MID 90.0
 #define GRI_MAX 165.0       // Fully closed
 
-
 // Speed adjustment parameters
 // Percentages (1.0 = 100%) - applied to all arm movements
 #define SPEED_MIN 0.5
@@ -88,11 +88,6 @@
 #define JS_SCALE 100.0      // Divisor for scaling JS output for raw servo control
 #define Z_INCREMENT 2.0     // Change in Z axis (mm) per button press
 #define G_INCREMENT 2.0     // Change in Gripper jaw opening (servo angle) per button press
-
-// Audible feedback sounds
-#define TONE_READY 1000     // Hz
-#define TONE_IK_ERROR 200   // Hz
-#define TONE_DURATION 100   // ms
  
 // IK function return values
 #define IK_SUCCESS 0
@@ -102,20 +97,20 @@
 #define PARK_MIDPOINT 1     // Servos at midpoints
 #define PARK_READY 2        // Arm at Ready-To-Run position
 
-// Ready-To-Run arm position. See descriptions below
-// NOTE: Have the arm near this position before turning on the 
-//       servo power to prevent whiplash
+// Ready-to-run arm position.
+#define READY_X 0.0
 #define READY_Y 170.0
 #define READY_Z 45.0
 #define READY_GA 0.0
 #define READY_G GRI_MID
 
+
 // Global variables for arm position, and initial settings
+float X = READY_X;         // Left/right distance (mm) from base centerline - 0 is straight
 float Y = READY_Y;          // Distance (mm) out from base center
 float Z = READY_Z;          // Height (mm) from surface (i.e. X/Y plane)
 float GA = READY_GA;        // Gripper angle. Servo degrees, relative to X/Y plane - 0 is horizontal
 float G = READY_G;          // Gripper jaw opening. Servo degrees - midpoint is halfway open
-
 float Speed = SPEED_DEFAULT;
 
 // Pre-calculations
@@ -126,22 +121,21 @@ float uln_sq = ULNA*ULNA;
 PS2X    Ps2x;
 
 // Servo objects 
-Servo   Bas_Servo;
-Servo   Shl_Servo;
-Servo   Elb_Servo;
-Servo   Wri_Servo;
-Servo   Gri_Servo;
+Servo   base_servo;
+Servo   shoulder_servo;
+Servo   elbow_servo;
+Servo   wrist_servo;
+Servo   gripper_servo;
 
+ 
 void setup()
 {
-
-
     // Attach to the servos and specify range limits
-    Bas_Servo.attach(BAS_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
-    Shl_Servo.attach(SHL_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
-    Elb_Servo.attach(ELB_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
-    Wri_Servo.attach(WRI_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
-    Gri_Servo.attach(GRI_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
+    base_servo.attach(base_servo_PIN, SERVO_MIN_US, SERVO_MAX_US);
+    shoulder_servo.attach(shoulder_servo_PIN, SERVO_MIN_US, SERVO_MAX_US);
+    elbow_servo.attach(elbow_servo_PIN, SERVO_MIN_US, SERVO_MAX_US);
+    wrist_servo.attach(wrist_servo_PIN, SERVO_MIN_US, SERVO_MAX_US);
+    gripper_servo.attach(gripper_servo_PIN, SERVO_MIN_US, SERVO_MAX_US);
 
 
     // Setup PS2 controller. Loop until ready.
@@ -150,22 +144,25 @@ void setup()
         ps2_stat = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
 
     } while (ps2_stat == 1);
+ 
+
 
     // NOTE: Ensure arm is close to the desired park position before turning on servo power!
-    servo_park(PARK_READY);
+    park_servos(PARK_READY);
+
 
 
     delay(500);
-    // Sound tone to indicate it's safe to turn on servo power
-    tone(SPK_PIN, TONE_READY, TONE_DURATION);
-    delay(TONE_DURATION * 2);
-    tone(SPK_PIN, TONE_READY, TONE_DURATION);
+
 
 }
  
 void loop()
 {
     // Store desired position in tmp variables until confirmed by set_arm() logic
+         // 3D kinematics
+    float x_tmp = X;
+
     float y_tmp = Y;
     float z_tmp = Z;
     float ga_tmp = GA;
@@ -183,17 +180,20 @@ void loop()
     int rx_trans = Ps2x.Analog(PSS_RX) - JS_MIDPOINT;
 
 
+
+    // X Position (in mm)
+    // Can be positive or negative. Servo range checking in IK code
+    if (abs(rx_trans) > JS_DEADBAND) {
+        x_tmp += ((float)rx_trans / JS_IK_SCALE * Speed);
+        arm_move = true;
+
+
     // Y Position (in mm)
     // Must be > Y_MIN. Servo range checking in IK code
     if (abs(ry_trans) > JS_DEADBAND) {
         y_tmp += ((float)ry_trans / JS_IK_SCALE * Speed);
         y_tmp = max(y_tmp, Y_MIN);
         arm_move = true;
-        
-        if (y_tmp == Y_MIN) {
-            // Provide audible feedback of reaching limit
-            tone(SPK_PIN, TONE_IK_ERROR, TONE_DURATION);
-        }
     }
 
     // Z Position (in mm)
@@ -224,18 +224,13 @@ void loop()
             G -= G_INCREMENT;   // open
         }
         G = constrain(G, GRI_MIN, GRI_MAX);
-        Gri_Servo.writeMicroseconds(deg_to_us(G));
-
-        if (G == GRI_MIN || G == GRI_MAX) {
-            // Provide audible feedback of reaching limit
-            tone(SPK_PIN, TONE_IK_ERROR, TONE_DURATION);
-        }
+        gripper_servo.writeMicroseconds(deg_to_us(G));
     }
 
     // Fully open gripper
     if (Ps2x.ButtonPressed(PSB_BLUE)) {
         G = GRI_MIN;
-        Gri_Servo.writeMicroseconds(deg_to_us(G));
+        gripper_servo.writeMicroseconds(deg_to_us(G));
     }
     
     // Speed increase/decrease
@@ -247,14 +242,22 @@ void loop()
         }
         // Constrain to limits
         Speed = constrain(Speed, SPEED_MIN, SPEED_MAX);
-        
-        // Audible feedback
-        tone(SPK_PIN, (TONE_READY * Speed), TONE_DURATION);
     }
     
 
     // Only perform IK calculations if arm motion is needed.
     if (arm_move) {
+
+        if (set_arm(x_tmp, y_tmp, z_tmp, ga_tmp) == IK_SUCCESS) {
+            // If the arm was positioned successfully, record
+            // the new vales. Otherwise, ignore them.
+            X = x_tmp;
+            Y = y_tmp;
+            Z = z_tmp;
+            GA = ga_tmp;
+        } else {
+            Serial.print("IK Error");
+        }
 
 
         // Reset the flag
@@ -328,33 +331,34 @@ int set_arm(float x, float y, float z, float grip_angle_d)
         return IK_ERROR;
     
     // Position the servos
-    Shl_Servo.writeMicroseconds(deg_to_us(shl_pos));
-    Elb_Servo.writeMicroseconds(deg_to_us(elb_pos));
-    Wri_Servo.writeMicroseconds(deg_to_us(wri_pos));
-
+    base_servo.writeMicroseconds(deg_to_us(bas_pos));
+    shoulder_servo.writeMicroseconds(deg_to_us(shl_pos));
+    elbow_servo.writeMicroseconds(deg_to_us(elb_pos));
+    wrist_servo.writeMicroseconds(deg_to_us(wri_pos));
 
 
     return IK_SUCCESS;
 }
  
 // Move servos to parking position
-void servo_park(int park_type)
+void park_servos(int park_type)
 {
     switch (park_type) {
         // All servos at midpoint
         case PARK_MIDPOINT:
-            Bas_Servo.writeMicroseconds(deg_to_us(BAS_MID));
-            Shl_Servo.writeMicroseconds(deg_to_us(SHL_MID));
-            Elb_Servo.writeMicroseconds(deg_to_us(ELB_MID));
-            Wri_Servo.writeMicroseconds(deg_to_us(WRI_MID));
-            Gri_Servo.writeMicroseconds(deg_to_us(GRI_MID));
-
+            base_servo.writeMicroseconds(deg_to_us(BAS_MID));
+            shoulder_servo.writeMicroseconds(deg_to_us(SHL_MID));
+            elbow_servo.writeMicroseconds(deg_to_us(ELB_MID));
+            wrist_servo.writeMicroseconds(deg_to_us(WRI_MID));
+            gripper_servo.writeMicroseconds(deg_to_us(GRI_MID));
             break;
         
         // Ready-To-Run position
         case PARK_READY:
 
-            Gri_Servo.writeMicroseconds(deg_to_us(READY_G));
+            set_arm(READY_X, READY_Y, READY_Z, READY_GA);
+
+            gripper_servo.writeMicroseconds(deg_to_us(READY_G));
 
             break;
     }
@@ -362,12 +366,7 @@ void servo_park(int park_type)
     return;
 }
 
-// The Arduino Servo library .write() function accepts 'int' degrees, meaning
-// maximum servo positioning resolution is whole degrees. Servos are capable 
-// of roughly 2x that resolution via direct microsecond control.
-//
-// This function converts 'float' (i.e. decimal) degrees to corresponding 
-// servo microseconds to take advantage of this extra resolution.
+// Converts deg to us to take advantage of extra servo resolution.
 int deg_to_us(float value)
 {
     // Apply basic constraints
