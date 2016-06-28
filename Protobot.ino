@@ -12,17 +12,13 @@ int dummy;                  // Defining this dummy variable to work around a bug
 #define PS2_DAT_PIN 6       // Data
 
 // Practical navigation limit.
-// Enforced on controller input, and used for CLV calculation 
-// for base rotation in 2D mode. 
 #define Y_MIN 100.0         // mm
 
 // PS2 controller characteristics
 #define JS_MIDPOINT 128     // Numeric value for joystick midpoint
 #define JS_DEADBAND 4       // Ignore movement this close to the center position
 #define JS_IK_SCALE 50.0    // Divisor for scaling JS output for IK control
-#define JS_SCALE 100.0      // Divisor for scaling JS output for raw servo control
 #define Z_INCREMENT 2.0     // Change in Z axis (mm) per button press
-#define G_INCREMENT 2.0     // Change in Gripper jaw opening (servo angle) per button press
  
 // IK function return values
 #define IK_SUCCESS 0
@@ -33,25 +29,24 @@ int dummy;                  // Defining this dummy variable to work around a bug
 #define PARK_READY 2        // Arm at Ready-To-Run position
 
 // Ready-To-Run arm position. See descriptions below
-#define READY_X 0.0
-#define READY_Y 170.0
+#define READY_R 0.0
+#define READY_THETA 170.0
 #define READY_Z 45.0
 
 // Global variables for arm position, and initial settings
-float X = READY_X;         // Left/right distance (mm) from base centerline - 0 is straight
-float Y = READY_Y;          // Distance (mm) out from base center
+float X = READY_R;         // Left/right distance (mm) from base centerline - 0 is straight
+float Y = READY_THETA;          // Distance (mm) out from base center
 float Z = READY_Z;          // Height (mm) from surface (i.e. X/Y plane)
 float Speed = 1.0;
-
 
 // Declare PS2 controller and servo objects
 PS2X    Ps2x;
 Servo   arm_servo;
  
 void setup() {
-#ifdef DEBUG
-  Serial.begin(115200);
-#endif
+                                                                                          #ifdef DEBUG
+                                                                                            Serial.begin(115200);
+                                                                                          #endif
   // Attach to the servos and specify range limits
   arm_servo.attach(ARM_SERVO_PIN);
   
@@ -88,7 +83,7 @@ void setup() {
  
 void loop()
 {
-    // Store desired position in tmp variables until confirmed by set_arm() logic
+    // Store desired position in tmp variables until confirmed by set_robot() logic
     float x_tmp = X;
     float y_tmp = Y;
     float z_tmp = Z;
@@ -109,19 +104,16 @@ void loop()
         y_tmp += ((float)r_joystick_y / JS_IK_SCALE * Speed);
         y_tmp = max(y_tmp, Y_MIN);
         arm_move = true;
-        
         if (y_tmp == Y_MIN) {
             Serial.print("IK ERROR 1");
         }
     }
-
-    // Z Position (in mm)
-    // Must be positive. Servo range checking in IK code
-    if (Ps2x.Button(PSB_R1) || Ps2x.Button(PSB_R2)) {
-        if (Ps2x.Button(PSB_R1)) {
-            z_tmp += Z_INCREMENT * Speed;   // up
+    // Z position (mm); must be positive.
+    if (Ps2x.Button(PSB_L1) || Ps2x.Button(PSB_R1)) {
+        if (Ps2x.Button(PSB_L1)) {
+            z_tmp -= Z_INCREMENT * Speed;
         } else {
-            z_tmp -= Z_INCREMENT * Speed;   // down
+            z_tmp += Z_INCREMENT * Speed;
         }
         z_tmp = max(z_tmp, 0);
         arm_move = true;
@@ -129,7 +121,7 @@ void loop()
  
     // Only perform IK calculations if arm motion is needed.
     if (arm_move) {
-        if (set_arm(x_tmp, y_tmp, z_tmp) == IK_SUCCESS) {
+        if (set_robot(x_tmp, y_tmp, z_tmp) == IK_SUCCESS) {
             // If the arm was positioned successfully, record
             // the new vales. Otherwise, ignore them.
             X = x_tmp;
@@ -144,17 +136,13 @@ void loop()
     delay(10);
  }
  
-// Arm positioning routine utilizing Inverse Kinematics.
-// Z is height, Y is distance from base center out, X is side to side. Y, Z can only be positive.
-// Input dimensions are for the gripper, just short of its tip, where it grabs things.
-// If resulting arm position is physically unreachable, return error code.
-int set_arm(float x, float y, float z)
+// Position robot.
+// 0 = being full-speed in one direction, 180 being full speed in the other, and a value near 90 being no movement
+int set_robot(float r, float theta, float z)
 {
-    // rdist is y coordinate for the arm
-    y = rdist;
+    // Position servos.
+    arm_servo.writeMicroseconds(r);
     
-    // Position the servos
-    arm_servo.writeMicroseconds(deg_to_us(elb_pos));
                                                                                                                                       #ifdef DEBUG
                                                                                                                                         //DEBUGGING PRINTING GOES HERE
                                                                                                                                         Serial.println();
@@ -167,19 +155,13 @@ void servo_park(int park_type) {
     switch (park_type) {
         // All servos at midpoint
         case PARK_MIDPOINT:
-            arm_servo.writeMicroseconds(deg_to_us(ELB_MID));
+            arm_servo.write(ELB_MID);
             break;
         
         // Ready-To-Run position
         case PARK_READY:
-            set_arm(READY_X, READY_Y, READY_Z);
+            set_robot(READY_R, READY_THETA, READY_Z);
             break;
     }
     return;
-}
-
-// Converts deg to us to take advantage of additional servo resolution.
-int deg_to_us(float value) {
-    // Map degrees to microseconds, and round the result to a whole number
-    return(round(((value - SERVO_MIN_DEG) * ((float)SERVO_MAX_US - (float)SERVO_MIN_US) / (SERVO_MAX_DEG - SERVO_MIN_DEG)) + (float)SERVO_MIN_US));      
 }
