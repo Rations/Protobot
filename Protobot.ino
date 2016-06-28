@@ -1,50 +1,38 @@
 #include <Servo.h>
 #include <PS2X_lib.h>
 
-int dummy;                  // Defining this dummy variable to work around a bug in the IDE (1.0.3) pre-processor that messes up #ifdefs
-//#define DEBUG             // Uncomment to turn on debugging output
+int dummy;                  // Dummy variable to work around IDE (1.0.3) #ifdefs pre-processor bug. 
+//#define DEBUG             // Uncomment to turn on debugging output.
                             
-// Specify Arduino pins for servos and PS2 controller connections. 
+// Specify pins for servos, motors, PS2 controller connections. 
+#define PS2_CLK_PIN   9     // Clock
+#define PS2_CMD_PIN   7     // Command
+#define PS2_ATT_PIN   8     // Attention
+#define PS2_DAT_PIN   6     // Data
+
 #define ARM_SERVO_PIN 4     // Elbow Servo HS-755HB
-#define PS2_CLK_PIN 9       // Clock
-#define PS2_CMD_PIN 7       // Command
-#define PS2_ATT_PIN 8       // Attention
-#define PS2_DAT_PIN 6       // Data
 
-// Practical navigation limit.
-#define R_MIN 100.0         // mm
+#define VM_PIN        // Number goes here
+#define SM_PIN        // Number goes here
+#define GM_PIN        // Number goes here
 
-// PS2 controller characteristics
-#define JS_ZERO 128     // Numeric value for joystick midpoint
-#define JS_MAX 256
-#define JS_DEAD 4       // Ignore movement this close to the center position
-#define JS_IK_SCALE 50.0    // Divisor for scaling JS output for IK control
-#define Z_STEP 2.0     // Change in Z axis (mm) per button press
-float RANGE_JS = JS_MAX - JS_DEAD;
- 
-// IK function return values
-#define IK_SUCCESS  0
-#define IK_ERROR    1       // Desired position not possible
+// PS2 controller characteristics.
+#define JS_ZERO       128     // Joystick midpoint value.
+#define JS_RANGE      124
+#define JS_DEAD       4       // Joystick deadzone value.
+#define Z_STEP        2.0     // Change in z-axis (mm) per button press.
 
-// Boundary positions.
-#define MAX_R   100.0
-#define MIN_R   0.0
-float RANGE_R = MAX_R - MIN_R;
-
-// Default positions.
-#define READY_R 45.0
-#define READY_T 0
-#define READY_Z 45.0
-
-// Global variables storing position. Initialize to default positions. 
-float R = READY_R;  // Radial distance (mm) from base.
-float T = READY_T;  // Angle.
-float Z = READY_Z;  // Height (mm) from base plane.
-
-// Speed info. For CRS, 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
-#define R_SPD_ZERO  90 
+// Default servo speeds. For CRS, 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
+#define R_SPD_ZERO 90
 #define R_SPD_RANGE 90
 float R_SPD_SCALE = R_SPD_RANGE / JS_RANGE;
+#define T_SPD_ZERO 90
+#define Z_SPD_ZERO 90
+
+// Global variables storing servo speeds. Initialize to default speeds.  
+float r_spd = R_SPD_ZERO;
+float t_spd = T_SPD_ZERO;
+float z_spd = Z_SPD_ZERO;
 
 // Declare PS2 controller and servo objects
 PS2X  Ps2x;
@@ -55,12 +43,16 @@ void setup() {
   Serial.begin(115200);
 #endif
   arm_servo.attach(ARM_SERVO_PIN);
+  pinMode(VM_PIN, OUTPUT);
+  pinMode(GM_PIN, OUTPUT);
+  pinMode(SM_PIN, OUTPUT);
+  
   // Set up PS2 controller; loop until ready.
   byte ps2_status;
   do {
     ps2_status = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
 #ifdef DEBUG
-  if (ps2_status == 1) Serial.println("No controller found. Re-trying ...");
+  if (ps2_status == 1) Serial.println("No controller found. Re-trying . . .");
 #endif
   } while (ps2_status == 1);
 #ifdef DEBUG
@@ -77,7 +69,7 @@ void setup() {
   }
 #endif
   // Park robot when ready.                            
-  set_robot(READY_R, READY_T, READY_Z);
+  set_robot(R_SPD_ZERO, R_SPD_ZERO, R_SPD_ZERO);
 #ifdef DEBUG
   Serial.println("Started.");
 #endif
@@ -86,24 +78,18 @@ void setup() {
  
 void loop()
 {
-  // Store desired position in temporary variables until confirmed by set_robot() logic.
-  float r_spd_temp = R;
-  float t_temp = T;
-  float z_temp = Z;
-  
   // Indidates whether input can move arm. 
   boolean move_arm = false;
 
   Ps2x.read_gamepad();
   // Read right joystick; adjust value with respect to joystick zero point.
-  float RH_JS_Y = (float)(JS_ZERO - Ps2x.Analog(PSS_RY));
-  // r position (mm); must be > R_MIN.
-  if (abs(RH_JS_Y) > JS_DEAD) {
-    r_spd_temp = R_SPD_ZERO + RH_JS_Y * R_SPD_SCALE;
+  float rh_js_y = (float)(Ps2x.Analog(PSS_RY) - JS_ZERO);
+  if (abs(rh_js_y) > JS_DEAD) {
+    r_spd = R_SPD_ZERO + rh_js_y * R_SPD_SCALE;
     move_arm = true;
   }
     
-  // z position (mm).
+  // z
   if (Ps2x.Button(PSB_L1) || Ps2x.Button(PSB_R1)) {
     if (Ps2x.Button(PSB_L1)) {
       z_temp -= Z_STEP;
@@ -117,13 +103,12 @@ void loop()
   
   // Check if motion is needed.
   if (move_arm) {
-    if (set_robot(r_spd_temp, t_temp, z_temp) == IK_SUCCESS) {
+    if (set_robot(r_spd, t_spd, z_spd)) {
       // If the arm was positioned successfully, record the new vales. Otherwise, ignore them.
-      R = arm.servo.read();
       T = t_temp;
       Z = z_temp;
     } else {
-      Serial.print("IK_ERROR 2");
+      Serial.print("IK_ERROR.");
     }
     // Reset the flag
     move_arm = false;
@@ -132,13 +117,11 @@ void loop()
 }
  
 // Position robot.
-int set_robot(float r_spd, float theta, float z)
+int set_robot(float r_spd, float t_spd, float z_spd)
 {
   arm_servo.write(r_spd);
-  // CODE FOR OTHER MOTORS GOES HERE
-#ifdef DEBUG
-  //DEBUGGING PRINTING GOES HERE
-  Serial.println();
-#endif
-    return IK_SUCCESS;
+  analogWrite(VM_PIN, speed);
+  analogWrite(SM_PIN, speed);
+  analogWrite(GM_PIN, speed);
+  return true;
 }
