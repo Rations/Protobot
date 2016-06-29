@@ -14,7 +14,7 @@
 // PS2 joystick characteristics.
 #define PS2_REFRESH       5 // Controller refresh rate (ms)
 #define JOYSTICK_ZERO     128   // Joystick midpoint value
-#define JOYSTICK_RANGE    124
+#define JOYSTICK_RANGE    124   // 128 - JOYSTICK DEADZONE
 #define JOYSTICK_DEADZONE 4     // Joystick deadzone value
 boolean vacuumOn = false;      // Allows vacuum to be switched on and off alternatingly. 
 
@@ -61,7 +61,7 @@ void loop() {
   ps2.read_gamepad();
   
   // Read vertical-axis inputs from right joystick (operates arm).
-  float joystickRY = (float)(JOYSTICK_ZERO - ps2.Analog(PSS_RY));
+  float joystickRY = (float)JOYSTICK_ZERO - ps2.Analog(PSS_RY);
   if (abs(joystickRY) > JOYSTICK_DEADZONE) {
     armSpeed = ARM_SPEED_ZERO + joystickRY * ARM_SPEED_SCALE;
     armServo.write(armSpeed);
@@ -70,7 +70,7 @@ void loop() {
   }
 
   // Read horizontal-axis inputs from left joystick (operates rotating base).
-  float joystickLX = (float)(ps2.Analog(PSS_LX) - JOYSTICK_ZERO);
+  float joystickLX = (float)ps2.Analog(PSS_LX) - JOYSTICK_ZERO;
   if (abs(joystickLX) > JOYSTICK_DEADZONE) {
     baseSpeed = BASE_SPEED_ZERO + joystickLX * BASE_SPEED_SCALE;
     baseMotor -> setSpeed(abs(baseSpeed));
@@ -84,7 +84,7 @@ void loop() {
   }
 
   // Read vertical-axis inputs from left joystick (operates lift).
-  float joystickLY = (float)(JOYSTICK_ZERO - ps2.Analog(PSS_LY));
+  float joystickLY = (float)JOYSTICK_ZERO - ps2.Analog(PSS_LY);
   if (abs(joystickLY) > JOYSTICK_DEADZONE) {
     liftSpeed = LIFT_SPEED_ZERO + joystickLY * LIFT_SPEED_SCALE;
     liftMotor1 -> setSpeed(abs(liftSpeed));
