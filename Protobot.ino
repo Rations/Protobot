@@ -1,113 +1,115 @@
-// To address: SM max speed
-// VM speed and direction
-// step(, , DOUBLE or SINGLE)?
-
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 #include "utility/Adafruit_MS_PWMServoDriver.h"
 #include <Servo.h>
 #include <PS2X_lib.h>
                             
-// Specify pins for servos, motors, PS2 controller connections. 
-#define PS2_CLK_PIN   9     // Clock
-#define PS2_CMD_PIN   7     // Command
-#define PS2_ATT_PIN   8     // Attention
-#define PS2_DAT_PIN   6     // Data
+// Specify Arduino pins for arm servo and PS2 controller connections. 
+#define ARM_SERVO_PIN     4
+#define PS2_CLOCK_PIN     9
+#define PS2_COMMAND_PIN   7
+#define PS2_ATTENTION_PIN 8
+#define PS2_DATA_PIN      6
 
-#define ARM_SERVO_PIN 4
+// PS2 joystick characteristics.
+#define PS2_REFRESH       5 // Controller refresh rate (ms)
+#define JOYSTICK_ZERO     128   // Joystick midpoint value
+#define JOYSTICK_RANGE    124
+#define JOYSTICK_DEADZONE 4     // Joystick deadzone value
+boolean vacuumOn = false;      // Allows vacuum to be switched on and off alternatingly. 
 
-#define GM1_PIN 3            // Currently a placeholder
-#define GM2_PIN 10
-#define SM_PIN 2            // Currently a placeholder
-#define VM_PIN 1            // Currently a placeholder
+// Arm servo characteristics. 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
+#define ARM_SPEED_ZERO    90
+#define ARM_SPEED_RANGE   90
+float ARM_SPEED_SCALE =   ARM_SPEED_RANGE / JOYSTICK_RANGE;
 
-// PS2 controller characteristics.
-#define JS_ZERO       128   // Joystick midpoint value
-#define JS_RANGE      124
-#define JS_DEAD       4     // Joystick deadzone value
+#define BASE_SPEED_ZERO    0     // In rpm
+#define BASE_SPEED_RANGE   7.5   // In rpm = 1 rotation takes 8 seconds
+float BASE_SPEED_SCALE =   BASE_SPEED_RANGE / JOYSTICK_RANGE;
 
-// CRS speed data. 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
-#define R_SPD_ZERO    90
-#define R_SPD_RANGE   90
-float R_SPD_SCALE =   R_SPD_RANGE / JS_RANGE;
-
-#define T_SPD_ZERO    0     // In rpm
-#define T_SPD_RANGE   12    // In rpm
-float T_SPD_SCALE =   T_SPD_RANGE / JS_RANGE;
-
-#define Z_SPD_ZERO    0   
-#define Z_SPD_RANGE   255
-float Z_SPD_SCALE =   Z_SPD_RANGE / JS_RANGE;
+#define LIFT_SPEED_ZERO    0   
+#define LIFT_SPEED_RANGE   255
+float LIFT_SPEED_SCALE =   LIFT_SPEED_RANGE / JOYSTICK_RANGE;
 
 // Global variables storing servo speeds. Initialize to zero speed.  
-float r_spd = R_SPD_ZERO;
-float t_spd = T_SPD_ZERO;
-float z_spd = Z_SPD_ZERO;
+float armSpeed = ARM_SPEED_ZERO;
+float baseSpeed = BASE_SPEED_ZERO;
+float liftSpeed = LIFT_SPEED_ZERO;
 
-// Declare PS2 controller and servo objects
-PS2X  Ps2x;
-Servo arm_servo;
-Adafruit_MotorShield AFMStop(0x61); // Rightmost jumper closed
-Adafruit_MotorShield AFMSbot(0x60); // Default address, no jumpers
-Adafruit_DCMotor *GM1 = AFMSbot.getMotor(1);
-Adafruit_DCMotor *GM2 = AFMSbot.getMotor(2); 
-Adafruit_StepperMotor *stepperMotor_1 = AFMSbot.getStepper(400, 2);
-Adafruit_DCMotor *VM = AFMStop.getMotor(1);
+// Declare servo, motor, and PS2 controller objects.
+PS2X  ps2;
+Servo armServo;
+Adafruit_MotorShield AFMStop(0x61);           // Rightmost jumper closed
+Adafruit_MotorShield AFMSbot(0x60);           // Default address, no jumpers
+Adafruit_DCMotor *liftMotor1 = AFMSbot.getMotor(1);
+Adafruit_DCMotor *liftMotor2 = AFMSbot.getMotor(2); 
+Adafruit_StepperMotor *baseMotor = AFMSbot.getStepper(400, 2);
+Adafruit_DCMotor *vacuum = AFMStop.getMotor(1);
  
 void setup() {
-  arm_servo.attach(ARM_SERVO_PIN);
+  armServo.attach(ARM_SERVO_PIN);
 
   // Set up PS2 controller; loop until ready.
-  byte ps2_status;
+  byte ps2Status;
   do {
-    ps2_status = Ps2x.config_gamepad(PS2_CLK_PIN, PS2_CMD_PIN, PS2_ATT_PIN, PS2_DAT_PIN);
-  } while (ps2_status == 1);
+    ps2Status = ps2.config_gamepad(PS2_CLOCK_PIN, PS2_COMMAND_PIN, PS2_ATTENTION_PIN, PS2_DATA_PIN);
+  } while (ps2Status == 1);
   delay(100);
 }
  
 void loop() {
-  Ps2x.read_gamepad();
+  ps2.read_gamepad();
   
-  // Read right joystick; adjust value with respect to joystick zero point. 
-  // Corresponds to arm servo.
-  float rh_js_y = (float)(JS_ZERO - Ps2x.Analog(PSS_RY));
-  if (abs(rh_js_y) > JS_DEAD) {
-    r_spd = R_SPD_ZERO + rh_js_y * R_SPD_SCALE;
-    arm_servo.write(r_spd);
+  // Read vertical-axis inputs from right joystick (operates arm).
+  float joystickRY = (float)(JOYSTICK_ZERO - ps2.Analog(PSS_RY));
+  if (abs(joystickRY) > JOYSTICK_DEADZONE) {
+    armSpeed = ARM_SPEED_ZERO + joystickRY * ARM_SPEED_SCALE;
+    armServo.write(armSpeed);
+  } else {
+    armServo.write(ARM_SPEED_ZERO);
   }
 
-  // Read left joystick; adjust value with respect to joystick zero point.
-  // Corresponds to stepper motor (SM).
-  float lh_js_x = (float)(Ps2x.Analog(PSS_LX) - JS_ZERO);
-  if (abs(lh_js_x) > JS_DEAD) {
-    t_spd = T_SPD_ZERO + lh_js_x * T_SPD_SCALE;
-  }
-
-  // Read left joystick; adjust value with respect to joystick zero point.
-  // Corresponds to gear motors (GM).
-  float lh_js_y = (float)(JS_ZERO - Ps2x.Analog(PSS_LY));
-  if (abs(lh_js_y) > JS_DEAD) {
-    z_spd = Z_SPD_ZERO + lh_js_y * Z_SPD_SCALE;
-    GM1->setSpeed(abs(z_spd));
-    GM2->setSpeed(abs(z_spd));
-    if (z_spd > 0) { 
-      GM1->run(FORWARD);
-      GM2->run(FORWARD);
-    } else if (z_spd < 0) {
-      GM1->run(BACKWARD);
-      GM2->run(BACKWARD);
+  // Read horizontal-axis inputs from left joystick (operates rotating base).
+  float joystickLX = (float)(ps2.Analog(PSS_LX) - JOYSTICK_ZERO);
+  if (abs(joystickLX) > JOYSTICK_DEADZONE) {
+    baseSpeed = BASE_SPEED_ZERO + joystickLX * BASE_SPEED_SCALE;
+    baseMotor -> setSpeed(abs(baseSpeed));
+    if (baseSpeed > 0) { 
+      baseMotor -> step(3, FORWARD, SINGLE);
+    } else {
+      baseMotor -> step(3, BACKWARD, SINGLE);
     } 
   } else {
-      GM1->run(RELEASE);
-      GM2->run(RELEASE);
+      baseMotor -> setSpeed(BASE_SPEED_ZERO);
   }
 
-  // Read R2. If R2 pressed, turn vacuum on/off as necessary.
-  if (Ps2x.Button(PSB_R2)) {
-      VM->run(FORWARD);                 
+  // Read vertical-axis inputs from left joystick (operates lift).
+  float joystickLY = (float)(JOYSTICK_ZERO - ps2.Analog(PSS_LY));
+  if (abs(joystickLY) > JOYSTICK_DEADZONE) {
+    liftSpeed = LIFT_SPEED_ZERO + joystickLY * LIFT_SPEED_SCALE;
+    liftMotor1 -> setSpeed(abs(liftSpeed));
+    liftMotor2 -> setSpeed(abs(liftSpeed));
+    if (liftSpeed > 0) { 
+      liftMotor1 -> run(FORWARD);
+      liftMotor2 -> run(FORWARD);
     } else {
-      VM->run(RELEASE);
-    }
+      liftMotor1 -> run(BACKWARD);
+      liftMotor2 -> run(BACKWARD);
+    } 
+  } else {
+      liftMotor1 -> run(RELEASE);
+      liftMotor2 -> run(RELEASE);
   }
-  delay(5);
+
+  // Read R2. If R2 depressed, switch vacuum on/off as necessary.
+  if (ps2.Button(PSB_R2)) {
+    if (!vacuumOn) {
+      vacuum -> run(FORWARD);                 
+      vacuum -> setSpeed(255);
+    } else {
+      vacuum -> run(RELEASE);
+    }
+    vacuumOn = !vacuumOn;
+  }
+  delay(PS2_REFRESH);
 }
