@@ -25,7 +25,7 @@
 #define JS_ZERO       128   // Joystick midpoint value
 #define JS_RANGE      124
 #define JS_DEAD       4     // Joystick deadzone value
-boolean VM_dir = false;
+boolean VM_on = false;
 
 // CRS speed data. 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
 #define R_SPD_ZERO    90
@@ -105,13 +105,13 @@ void loop() {
 
   // Read R2. If R2 pressed, turn vacuum on/off as necessary.
   if (Ps2x.Button(PSB_R2)) {
-    if (!VM_dir) {
+    if (!VM_on) {
       VM->run(FORWARD);                 
       VM->setSpeed(0);    // Justin's speed
     } else {
       VM->run(RELEASE);
     }
-    VM_dir = !VM_dir;
+    VM_on = !VM_on;
   }
   delay(5);
 }
