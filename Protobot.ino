@@ -16,7 +16,6 @@
 #define JOYSTICK_ZERO     128   // Joystick midpoint value
 #define JOYSTICK_RANGE    124   // 128 - JOYSTICK DEADZONE
 #define JOYSTICK_DEADZONE 4     // Joystick deadzone value
-boolean vacuumOn = false;      // Allows vacuum to be switched on and off alternatingly. 
 
 // Arm servo characteristics. 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
 #define ARM_SPEED_ZERO    90
@@ -39,13 +38,16 @@ float liftSpeed = LIFT_SPEED_ZERO;
 // Declare servo, motor, and PS2 controller objects.
 PS2X  ps2;
 Servo armServo;
-Adafruit_MotorShield AFMStop(0x61);           // Rightmost jumper closed
-Adafruit_MotorShield AFMSbot(0x60);           // Default address, no jumpers
+Adafruit_MotorShield AFMStop(0x61);                             // Rightmost jumper closed
+Adafruit_MotorShield AFMSbot(0x60);                             // Default address, no jumpers
 Adafruit_DCMotor *liftMotor1 = AFMSbot.getMotor(1);
 Adafruit_DCMotor *liftMotor2 = AFMSbot.getMotor(2); 
 Adafruit_StepperMotor *baseMotor = AFMSbot.getStepper(400, 2);
 Adafruit_DCMotor *vacuum = AFMStop.getMotor(1);
- 
+#define VACUUM_DEADZONE 200                                     // Prevents unintended switching when button is depressed for up to 200 ms. 
+boolean vacuumOn = false;                                       // Allows vacuum to be switched on and off alternatingly. 
+long lastTime = 0;                                              // Stores last time vacuum switch (R2) was depressed.
+
 void setup() {
   armServo.attach(ARM_SERVO_PIN);
 
@@ -60,7 +62,7 @@ void setup() {
 void loop() {
   ps2.read_gamepad();
   
-  // Read vertical-axis inputs from right joystick (operates arm).
+  // Read vertical-axis inputs from right joystick to extend/retract arm.
   float joystickRY = (float)JOYSTICK_ZERO - ps2.Analog(PSS_RY);
   if (abs(joystickRY) > JOYSTICK_DEADZONE) {
     armSpeed = ARM_SPEED_ZERO + joystickRY * ARM_SPEED_SCALE;
@@ -69,7 +71,7 @@ void loop() {
     armServo.write(ARM_SPEED_ZERO);
   }
 
-  // Read horizontal-axis inputs from left joystick (operates rotating base).
+  // Read horizontal-axis inputs from left joystick to rotate base.
   float joystickLX = (float)ps2.Analog(PSS_LX) - JOYSTICK_ZERO;
   if (abs(joystickLX) > JOYSTICK_DEADZONE) {
     baseSpeed = BASE_SPEED_ZERO + joystickLX * BASE_SPEED_SCALE;
@@ -83,7 +85,7 @@ void loop() {
       baseMotor -> setSpeed(BASE_SPEED_ZERO);
   }
 
-  // Read vertical-axis inputs from left joystick (operates lift).
+  // Read vertical-axis inputs from left joystick to raise/lower lift.
   float joystickLY = (float)JOYSTICK_ZERO - ps2.Analog(PSS_LY);
   if (abs(joystickLY) > JOYSTICK_DEADZONE) {
     liftSpeed = LIFT_SPEED_ZERO + joystickLY * LIFT_SPEED_SCALE;
@@ -101,8 +103,9 @@ void loop() {
       liftMotor2 -> run(RELEASE);
   }
 
-  // Read R2. If R2 depressed, switch vacuum on/off as necessary.
-  if (ps2.Button(PSB_R2)) {
+  // Read R2. If R2 is depressed and at least 200 ms has elapsed since last depression, switch vacuum on/off as necessary.
+  long currentTime = millis();
+  if (ps2.Button(PSB_R2) && currentTime - lastTime > VACUUM_DEADZONE) {
     if (!vacuumOn) {
       vacuum -> run(FORWARD);                 
       vacuum -> setSpeed(255);
@@ -110,6 +113,7 @@ void loop() {
       vacuum -> run(RELEASE);
     }
     vacuumOn = !vacuumOn;
+    lastTime = millis();
   }
   delay(PS2_REFRESH);
 }
