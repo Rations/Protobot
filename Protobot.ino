@@ -49,6 +49,9 @@ boolean vacuumOn = false;                                       // Allows vacuum
 long lastTime = 0;                                              // Stores last time vacuum switch (R2) was depressed.
 
 void setup() {
+  
+  AFMStop.begin();
+  AFMSbot.begin();
   armServo.attach(ARM_SERVO_PIN);
 
   // Set up PS2 controller; loop until ready.
