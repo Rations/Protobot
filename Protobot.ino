@@ -79,12 +79,12 @@ void loop() {
   float joystickLX = (float)ps2.Analog(PSS_LX) - JOYSTICK_ZERO;
   if (abs(joystickLX) > JOYSTICK_DEADZONE) {
     baseSpeed = BASE_SPEED_ZERO + joystickLX * BASE_SPEED_SCALE;
-    baseMotor -> setSpeed(abs(baseSpeed));
     if (baseSpeed > 0) { 
       baseMotor -> run(FORWARD);
     } else {
       baseMotor -> run(BACKWARD);
     } 
+    baseMotor -> setSpeed(abs(baseSpeed));
   } else {
       baseMotor -> run(RELEASE);
   }
@@ -93,8 +93,6 @@ void loop() {
   float joystickLY = (float)JOYSTICK_ZERO - ps2.Analog(PSS_LY);
   if (abs(joystickLY) > JOYSTICK_DEADZONE) {
     liftSpeed = LIFT_SPEED_ZERO + joystickLY * LIFT_SPEED_SCALE;
-    liftMotor1 -> setSpeed(abs(liftSpeed));
-    liftMotor2 -> setSpeed(abs(liftSpeed));
     if (liftSpeed > 0) { 
       liftMotor1 -> run(FORWARD);
       liftMotor2 -> run(FORWARD);
@@ -102,6 +100,8 @@ void loop() {
       liftMotor1 -> run(BACKWARD);
       liftMotor2 -> run(BACKWARD);
     } 
+    liftMotor1 -> setSpeed(abs(liftSpeed));
+    liftMotor2 -> setSpeed(abs(liftSpeed));
   } else {
       liftMotor1 -> run(RELEASE);
       liftMotor2 -> run(RELEASE);
