@@ -22,11 +22,11 @@
 #define ARM_SPEED_RANGE   90
 float ARM_SPEED_SCALE =   ARM_SPEED_RANGE / JOYSTICK_RANGE;
 
-#define BASE_SPEED_ZERO    0     // In rpm
-#define BASE_SPEED_RANGE   7.5   // In rpm = 1 rotation takes 8 seconds
+#define BASE_SPEED_ZERO    0     // For bottom gear motor
+#define BASE_SPEED_RANGE   255   
 float BASE_SPEED_SCALE =   BASE_SPEED_RANGE / JOYSTICK_RANGE;
 
-#define LIFT_SPEED_ZERO    0   
+#define LIFT_SPEED_ZERO    0   //For two lift gear motors
 #define LIFT_SPEED_RANGE   255
 float LIFT_SPEED_SCALE =   LIFT_SPEED_RANGE / JOYSTICK_RANGE;
 
@@ -38,12 +38,16 @@ float liftSpeed = LIFT_SPEED_ZERO;
 // Declare servo, motor, and PS2 controller objects.
 PS2X  ps2;
 Servo armServo;
-Adafruit_MotorShield AFMStop(0x61);                             // Rightmost jumper closed
+
+/*Adafruit_MotorShield AFMStop(0x61);                             // Rightmost jumper closed
 Adafruit_MotorShield AFMSbot(0x60);                             // Default address, no jumpers
-Adafruit_DCMotor *liftMotor1 = AFMSbot.getMotor(1);
-Adafruit_DCMotor *liftMotor2 = AFMSbot.getMotor(2); 
-Adafruit_StepperMotor *baseMotor = AFMSbot.getStepper(400, 2);
-Adafruit_DCMotor *vacuum = AFMStop.getMotor(1);
+*/
+
+Adafruit_MotorShield AFMS = Adafruit_MotorShield();
+Adafruit_DCMotor *liftMotor1 = AFMS.getMotor(1);
+Adafruit_DCMotor *liftMotor2 = AFMS.getMotor(2); 
+Adafruit_DCMotor *baseMotor = AFMS.getMotor(3);
+Adafruit_DCMotor *vacuum = AFMS.getMotor(4);
 #define VACUUM_DEADZONE 200                                     // Prevents unintended switching when button is depressed for up to 200 ms. 
 boolean vacuumOn = false;                                       // Allows vacuum to be switched on and off alternatingly. 
 long lastTime = 0;                                              // Stores last time vacuum switch (R2) was depressed.
@@ -77,12 +81,12 @@ void loop() {
     baseSpeed = BASE_SPEED_ZERO + joystickLX * BASE_SPEED_SCALE;
     baseMotor -> setSpeed(abs(baseSpeed));
     if (baseSpeed > 0) { 
-      baseMotor -> step(3, FORWARD, SINGLE);
+      baseMotor -> run(FORWARD);
     } else {
-      baseMotor -> step(3, BACKWARD, SINGLE);
+      baseMotor -> run(BACKWARD);
     } 
   } else {
-      baseMotor -> setSpeed(BASE_SPEED_ZERO);
+      baseMotor -> run(RELEASE);
   }
 
   // Read vertical-axis inputs from left joystick to raise/lower lift.
