@@ -54,7 +54,7 @@ long lastTime = 0;                                              // Stores last t
 
 void setup() {
   armServo.attach(ARM_SERVO_PIN);
-
+  AFMS.begin();
   // Set up PS2 controller; loop until ready.
   byte ps2Status;
   do {
