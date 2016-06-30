@@ -36,6 +36,7 @@ float baseSpeed = BASE_SPEED_ZERO;
 float liftSpeed = LIFT_SPEED_ZERO;
 
 // Declare servo, motor, and PS2 controller objects.
+AFMS.begin();
 PS2X  ps2;
 Servo armServo;
 
