@@ -1,7 +1,8 @@
-TBD: stepper motor maximum speed, vacuum motor speed and direction, step() function DOUBLE or SINGLE. 
+This code interfaces the Jambot V1.0 with a PS2 wireless controller. 
 
-Adapted from code by Eric Goldsmith:      
-https://github.com/EricGoldsmith/AL5D-BotBoarduino-PS2/blob/master/PS2_IK_Control/PS2_IK_Control.ino
+Adapted from code by Eric Goldsmith: https://github.com/EricGoldsmith/AL5D-BotBoarduino-PS2/blob/master/PS2_IK_Control/PS2_IK_Control.ino
+
+Requires Adafruit Motor Shield V2 library: https://learn.adafruit.com/adafruit-motor-shield-v2-for-arduino/install-software
 
 Protobot components:  
 Lynxmotion BotBoarduino V1.0  
