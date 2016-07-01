@@ -12,26 +12,26 @@
 #define PS2_DATA_PIN      6
 
 // PS2 joystick characteristics.
-#define PS2_REFRESH       5 // Controller refresh rate (ms)
+#define PS2_REFRESH       5     // Controller refresh rate (ms)
 #define JOYSTICK_ZERO     128   // Joystick midpoint value
 #define JOYSTICK_RANGE    124   // 128 - JOYSTICK DEADZONE
-#define JOYSTICK_DEADZONE 4     // Joystick deadzone value
+#define JOYSTICK_DEADZONE 4
 
 // Arm servo characteristics. 0 = full speed in one direction, 90 = zero speed, 180 = full speed in opposite direction.
 #define ARM_SPEED_ZERO    90
 #define ARM_SPEED_RANGE   90
 float ARM_SPEED_SCALE =   ARM_SPEED_RANGE / JOYSTICK_RANGE;
 
-#define BASE_SPEED_ZERO    0     // For bottom gear motor
+#define BASE_SPEED_ZERO    0
 #define BASE_SPEED_RANGE   255   
 float BASE_SPEED_SCALE =   BASE_SPEED_RANGE / JOYSTICK_RANGE;
 
-#define LIFT_SPEED_ZERO    0   //For two lift gear motors
+#define LIFT_SPEED_ZERO    0
 #define LIFT_SPEED_RANGE   255
 float LIFT_SPEED_SCALE =   LIFT_SPEED_RANGE / JOYSTICK_RANGE;
 
-// Global variables storing servo speeds. Initialize to zero speed.  
-float armSpeed = ARM_SPEED_ZERO;
+// Global variables storing servo speeds; initialize to zero speed.  
+float armSpeed  = ARM_SPEED_ZERO;
 float baseSpeed = BASE_SPEED_ZERO;
 float liftSpeed = LIFT_SPEED_ZERO;
 
@@ -39,22 +39,19 @@ float liftSpeed = LIFT_SPEED_ZERO;
 PS2X  ps2;
 Servo armServo;
 
-/*Adafruit_MotorShield AFMStop(0x61);                             // Rightmost jumper closed
-Adafruit_MotorShield AFMSbot(0x60);                             // Default address, no jumpers
-*/
-
-Adafruit_MotorShield AFMS = Adafruit_MotorShield();
-Adafruit_DCMotor *liftMotor1 = AFMS.getMotor(1);
-Adafruit_DCMotor *liftMotor2 = AFMS.getMotor(2); 
-Adafruit_DCMotor *baseMotor = AFMS.getMotor(3);
-Adafruit_DCMotor *vacuum = AFMS.getMotor(4);
-#define VACUUM_DEADZONE 200                                     // Prevents unintended switching when button is depressed for up to 200 ms. 
+Adafruit_MotorShield motorShield  = Adafruit_MotorShield();
+Adafruit_DCMotor *liftMotor1      = motorShield.getMotor(1);
+Adafruit_DCMotor *liftMotor2      = motorShield.getMotor(2); 
+Adafruit_DCMotor *baseMotor       = motorShield.getMotor(3);
+Adafruit_DCMotor *vacuum          = motorShield.getMotor(4);
+#define VACUUM_DEADZONE 200                                     // Prevents unintended switching when button is depressed for up to t = VACUUM_DEADZONE ms. 
 boolean vacuumOn = false;                                       // Allows vacuum to be switched on and off alternatingly. 
-long lastTime = 0;                                              // Stores last time vacuum switch (R2) was depressed.
+long    lastTime = 0;                                              // Stores last time vacuum switch (R2) was depressed.
 
 void setup() {
+  motorShield.begin();
   armServo.attach(ARM_SERVO_PIN);
-  AFMS.begin();
+  
   // Set up PS2 controller; loop until ready.
   byte ps2Status;
   do {
@@ -107,7 +104,7 @@ void loop() {
       liftMotor2 -> run(RELEASE);
   }
 
-  // Read R2. If R2 is depressed and at least 200 ms has elapsed since last depression, switch vacuum on/off as necessary.
+  // Read R2. If R2 is depressed and at least t = VACUUM_DEADZONE ms has elapsed since last depression, switch vacuum on/off as necessary.
   long currentTime = millis();
   if (ps2.Button(PSB_R2) && currentTime - lastTime > VACUUM_DEADZONE) {
     if (!vacuumOn) {
