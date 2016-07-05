@@ -5,7 +5,7 @@
 #include <PS2X_lib.h>
                             
 // Specify Arduino pins for arm servo and PS2 controller connections. 
-#define ARM_SERVO_PIN     4
+#define ARM_SERVO_PIN     10
 #define PS2_CLOCK_PIN     9
 #define PS2_COMMAND_PIN   7
 #define PS2_ATTENTION_PIN 8
